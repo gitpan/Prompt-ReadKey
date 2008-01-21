@@ -27,12 +27,14 @@ our ( @read_called, @print_called );
 	}
 }
 
+my @options = (
+	{ name => "one", default => 1 },
+	{ name => "two" },
+);
+
 my $t = MockPrompter->new(
 	default_prompt => "foo",
-	default_options => [
-		{ name => "one", default => 1 },
-		{ name => "two" },
-	],
+	default_options => \@options,
 );
 
 $print_ret = 1;
@@ -55,7 +57,7 @@ $print_ret = 1;
 	local @read_called;
 	local @print_called;
 
-	is( $t->prompt, "two", "option one" );
+	is( $t->prompt, "two", "option two" );
 
 	is( @read_called, 1, "read once" );
 	is( @print_called, 1, "printed once" );
@@ -101,7 +103,7 @@ $print_ret = 1;
 		\@print_called,
 		[
 			[ $t, "foo [Ot] " ],
-			[ $t, "'x' is not a valid choice, please select one of the options. Enter 'h' for help." ],
+			[ $t, "'x' is not a valid choice, please select one of the options. Enter 'h' for help.\n" ],
 			[ $t, "foo [Ot] " ],
 		],
 		"print arguments",
@@ -135,3 +137,16 @@ $print_ret = 1;
 	like( $help, qr/two/, "mentions 'two'" );
 	like( $help, qr/help/, "mentions 'help'" );
 }
+
+{
+	local @read_ret = ( 't' );
+	local @read_called;
+	local @print_called;
+
+	is( $t->prompt( return_option => 1 ), $options[1], "option two" );
+
+	is( @read_called, 1, "read once" );
+	is( @print_called, 1, "printed once" );
+}
+
+

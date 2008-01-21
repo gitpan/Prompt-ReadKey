@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Prompt-ReadKey
-version:             0.01
+version:             0.02
 abstract:            ~
 license:             ~
 author:              ~
@@ -11,6 +11,7 @@ requires:
     Scalar::Util:                  0
     Term::ReadKey:                 0
     Test::use::ok:                 0
+    Text::Sprintf::Named:          0
     Text::Table:                   0
 meta-spec:
     url:     http://module-build.sourceforge.net/META-spec-v1.3.html

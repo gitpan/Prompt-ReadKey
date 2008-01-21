@@ -1,8 +1,12 @@
+Changes
 lib/Prompt/ReadKey.pm
+lib/Prompt/ReadKey/Sequence.pm
+lib/Prompt/ReadKey/Util.pm
 Makefile.PL
 MANIFEST			This list of files
 MANIFEST.SKIP
 t/001_load.t
 t/002_basic.t
+t/003_sequence.t
 META.yml                                 Module meta-data (added by MakeMaker)
 SIGNATURE                                Public-key signature (added by MakeMaker)

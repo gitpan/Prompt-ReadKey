@@ -3,14 +3,15 @@
 package Prompt::ReadKey;
 use Moose;
 
-use Moose::Util::TypeConstraints;
+use Prompt::ReadKey::Util;
 
 use Carp qw(croak);
 use Term::ReadKey;
 use List::Util qw(first);
 use Text::Table;
+use Text::Sprintf::Named;
 
-our $VERSION = "0.01";
+our $VERSION = "0.02";
 
 has default_prompt => (
 	isa => "Str",
@@ -50,10 +51,8 @@ has help_footer => (
 	is  => "rw",
 );
 
-subtype Char => as Str => where { length == 1 };
-
 has help_keys => (
-	isa => "ArrayRef[Char]",
+	isa => "ArrayRef[Str]",
 	is  => "rw",
 	auto_deref => 1,
 	default => sub { [qw(h ?)] },
@@ -95,6 +94,12 @@ has auto_newline => (
 	default => 1,
 );
 
+has return_option => (
+	isa => "Bool",
+	is  => "rw",
+	default => 0,
+);
+
 has return_name => (
 	isa => "Bool",
 	is  => "rw",
@@ -113,38 +118,11 @@ has repeat_until_valid => (
 	default => 1,
 );
 
-sub _deref ($) {
-	my $ret = shift;
-
-	if ( wantarray and (ref($ret)||'') eq 'ARRAY' ) {
-		return @$ret;
-	} else {
-		return $ret;
-	}
-}
-
-sub _get_arg ($\%) {
-	my ( $name, $args ) = @_;
-	_deref( __get_arg( $name, $args ) );
-}
-
-sub _get_arg_or_default {
-	my ( $self, $name, %args ) = @_;
-
-	if ( exists $args{$name} ) {
-		_get_arg($name, %args);
-	} else {
-		my $method = ( ( $name =~ m/^(?: prompt | options )$/x ) ? "default_$name" : $name );
-		if ( $self->can($method) ) {
-			return _deref($self->$method());
-		}
-	}
-}
-
-sub __get_arg  {
-	my ( $name, $args ) = @_;
-	$args->{$name};
-}
+has prompt_format => (
+	isa => "Str",
+	is  => "rw",
+	default => '%(prompt)s [%(option_keys)s] ',
+);
 
 sub prompt {
 	my ( $self, %args ) = @_;
@@ -153,8 +131,8 @@ sub prompt {
 
 	$self->do_prompt(
 		%args,
-		options => \@options,
-		prompt  => $self->format_prompt( %args, options => \@options ),
+		options      => \@options,
+		prompt       => $self->format_prompt( %args, options => \@options, option_count => scalar(@options) ),
 	);
 }
 
@@ -218,34 +196,39 @@ sub prepare_options {
 }
 
 sub process_options {
-	my ( $self, %args ) = @_;
-	map { $self->process_option( %args, option => $_ ) } $self->_get_arg_or_default(options => %args);
+	my ( $self, @args ) = @_;
+	map { $self->process_option( @args, option => $_ ) } $self->_get_arg_or_default(options => @args);
 }
 
 sub process_option {
 	my ( $self, %args ) = @_;
 	my $opt = $args{option};
 
-	my @keys = $opt->{key} ? $opt->{key} : @{ $opt->{keys} || [] };
+	my @keys = $opt->{key} ? delete($opt->{key}) : @{ $opt->{keys} || [] };
 
 	unless ( @keys ) {
 		croak "either 'key', 'keys', or 'name' is a required option" unless $opt->{name};
 		@keys = ( substr $opt->{name}, 0, 1 );
 	}
 
-	return {
-		%$opt,
-		keys => \@keys,
-	};
+	$opt->{keys} = \@keys;
+
+	return $opt;
 }
 
 sub gather_options {
-	my ( $self, @args ) = @_;
+	my ( $self, %args ) = @_;
 
 	return (
-		$self->_get_arg_or_default(options => @args),
+		# explicit or default options
+		$self->_get_arg_or_default(options => %args),
+
+		# static additional options from the object *and* options passed on the arg list
 		$self->additional_options(),
-		$self->create_help_option(@args),
+		_get_arg(additional_options => %args),
+
+		# the help command
+		$self->create_help_option(%args),
 	);
 }
 
@@ -268,6 +251,7 @@ sub create_help_option {
 			keys           => \@keys,
 			callback       => "display_help",
 			is_help        => 1,
+			special_option => 1,
 		}
 	}
 
@@ -312,7 +296,7 @@ sub option_to_help_text {
 	my $opt = $args{option};
 
 	return {
-		keys => join(", ", @{ $opt->{keys} } ),
+		keys => join(", ", grep { /^[[:graph:]]+$/ } @{ $opt->{keys} } ),
 		name => $opt->{name} || "",
 		doc => $opt->{doc}  || "",
 	};
@@ -354,52 +338,86 @@ sub filter_options {
 }
 
 sub prompt_string {
-	my ( $self, %args ) = @_;
-	$self->_get_arg_or_default(prompt => %args) || croak "'prompt' argument is required";
+	my ( $self, @args ) = @_;
+	if ( my $string = $self->_get_arg_or_default(prompt => @args) ) {
+		return $self->format_string(
+			@args,
+			format => $string,
+		);
+	} else {
+		croak "'prompt' argument is required";
+	}
+}
+
+sub get_default_option {
+	my ( $self, @args ) = @_;
+
+	if ( my $default = $self->_get_arg_or_default( default_option => @args ) ) {
+		return $default;
+	} else {
+		return first { $_->{default} } $self->_get_arg_or_default( options => @args );
+	}
 }
 
 sub format_options {
 	my ( $self, %args ) = @_;
 
-	my @options = grep { not $_->{is_help} } $self->_get_arg_or_default(options => %args);
+	my $default_option = $self->get_default_option(%args);
+
+	my @options = grep { not $_->{special_option} } $self->_get_arg_or_default(options => %args);
 
 	if ( $self->_get_arg_or_default( case_insensitive => %args ) ) {
 		return join "", map {
-			my $default = $_->{default};
-			map { $default ? uc : lc } @{ $_->{keys} };
+			my $default = $default_option == $_;
+			map { $default ? uc : lc } grep { /^[[:graph:]]+$/ } @{ $_->{keys} };
 		} @options;
 	} else {
-		return join "", map { @{ $_->{keys} } } @options;
+		return join "", grep { /^[[:graph:]]+$/ } map { @{ $_->{keys} } } @options;
 	}
 }
 
-sub format_prompt {
+sub format_string {
 	my ( $self, %args ) = @_;
+	Text::Sprintf::Named->new({ fmt => $args{format} })->format({ args => \%args })
+}
 
-	sprintf "%s [%s] ", $self->prompt_string(%args), $self->format_options(%args);
+sub format_prompt {
+	my ( $self, @args ) = @_;
+
+	my $format = $self->_get_arg_or_default( prompt_format => @args );
+
+
+	$self->format_string(
+		@args,
+		format => $format,
+		prompt      => $self->prompt_string(@args),
+		option_keys => $self->format_options(@args),
+	);
 }
 
 sub read_option {
-	my ( $self, %args ) = @_;
+	my ( $self, @args ) = @_;
 
-	my @options = $self->_get_arg_or_default(options => %args);
+	my @options = $self->_get_arg_or_default(options => @args);
 
 	my %by_key = map {
 		my $opt = $_;
-		map { $_ => $opt } map { $self->process_char( %args, char => $_ ) } @{ $_->{keys} };
+		map { $_ => $opt } map { $self->process_char( @args, char => $_ ) } @{ $_->{keys} };
 	} @options;
 
-	my $c = $self->process_char( %args, char => $self->read_key(%args) );
+	my $c = $self->process_char( @args, char => $self->read_key(@args) );
 
 	if ( defined $c ) {
 		if ( exists $by_key{$c} ) {
 			return $by_key{$c};
 		} elsif ( $c =~ /^\s+$/ ) {
-			return first { $_->{default} } @options;
+			if ( my $default = $self->get_default_option(@args) ) {
+				return $default;
+			}
 		}
 	}
 
-	$self->invalid_choice(%args, char => $c);
+	$self->invalid_choice(@args, char => $c);
 
 	return;
 }
@@ -408,8 +426,9 @@ sub invalid_choice {
 	my ( $self, %args ) = @_;
 
 	my $output;
+	my $c = $args{char};
 
-	if ( defined ( my $c = $args{char} ) ) {
+	if ( defined($c) and $c =~ /^[[:graph:]]+$/ ) {
 		$output = "'$c' is not a valid choice, please select one of the options.";
 	} else {
 		$output = "Invalid input, please select one of the options.";
@@ -419,7 +438,7 @@ sub invalid_choice {
 		$output .= " Enter '$keys[0]' for help.";
 	}
 
-	$self->print($output);
+	$self->print("$output\n");
 }
 
 sub option_to_return_value {
@@ -427,14 +446,24 @@ sub option_to_return_value {
 
 	my $opt = $args{option};
 
-	if ( my $cb = $opt->{callback} ) {
-		return $self->$cb(%args);
+	if ( $opt->{special_option} ) {
+		if ( my $cb = $opt->{callback} ) {
+			return $self->$cb(%args);
+		} else {
+			return $opt;
+		}
 	} else {
-		return (
-			$self->_get_arg_or_default(return_name => %args)
-				? $opt->{name}
-				: $opt
-		);
+		return $opt if $self->_get_arg_or_default(return_option => %args);
+
+		if ( my $cb = $opt->{callback} ) {
+			return $self->$cb(%args);
+		} else {
+			return (
+				$self->_get_arg_or_default(return_name => %args)
+					? $opt->{name}
+					: $opt
+			);
+		}
 	}
 }
 
@@ -451,13 +480,20 @@ sub read_key {
 		$sigint->();
 	};
 
-    my $c = ReadKey( $self->_get_arg_or_default( readkey_mode => %args ) );
+	my $readkey_mode = $self->_get_arg_or_default( readkey_mode => %args );
+
+	my $c = ReadKey($readkey_mode);
+
+	if ( $c eq chr(0x1b) ) {
+		$c .= ReadKey($readkey_mode);
+		$c .= ReadKey($readkey_mode);
+	}
 
     ReadMode(0);
 
     die "Error reading key from user: $!" unless defined($c);
 
-    print $c if $self->_get_arg_or_default( echo_key => %args );
+    print $c if $c =~ /^[[:graph:]]+$/ and $self->_get_arg_or_default( echo_key => %args );
 
     print "\n" if $c ne "\n" and $self->_get_arg_or_default( auto_newline => %args );
 
@@ -726,6 +762,11 @@ Whether or not to echo back the key entered.
 
 Whether or not to add a newline after reading a key (if the key is not newline
 itself).
+
+=item return_option
+
+Overrides C<return_name> and the callback firing mechanism, so that the option
+spec is always returned.
 
 =item return_name
 
