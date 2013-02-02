@@ -18,11 +18,13 @@ has items => (
 );
 
 has default_prompt => (
+	init_arg => "prompt",
 	isa => "Str",
 	is  => "rw",
 );
 
 has default_options => (
+	init_arg => "options",
 	isa => "ArrayRef[HashRef]",
 	is  => "rw",
 	default => sub { [ ] },
@@ -85,7 +87,7 @@ has prev_help => (
 has prev_keys => (
 	isa => "ArrayRef[Str]",
 	is  => "rw",
-	default => sub { ["j", "\x{1b}[A", "\x{1b}[D" ] }, # up arrow, left arrow
+	default => sub { ["k", "\x{1b}[A", "\x{1b}[D" ] }, # up arrow, left arrow
 );
 
 has next_help => (
@@ -97,7 +99,7 @@ has next_help => (
 has next_keys => (
 	isa => "ArrayRef[Str]",
 	is  => "rw",
-	default => sub { ["k", "\x{1b}[B", "\x{1b}[C" ] }, # down arrow, right arrow
+	default => sub { ["j", "\x{1b}[B", "\x{1b}[C" ] }, # down arrow, right arrow
 );
 
 # trés ugly...
@@ -340,7 +342,7 @@ movement options.
 	use Prompt::ReadKey::Sequence;
 
 	my $seq = Prompt::ReadKey::Sequence->new(
-		default_options => ..,
+		options => ..,
 		items => \@items,
 	);
 

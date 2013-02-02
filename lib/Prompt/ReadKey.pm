@@ -11,9 +11,10 @@ use List::Util qw(first);
 use Text::Table;
 use Text::Sprintf::Named;
 
-our $VERSION = "0.03";
+our $VERSION = "0.04";
 
 has default_prompt => (
+	init_arg => "prompt",
 	isa => "Str",
 	is  => "rw",
 );
@@ -59,6 +60,7 @@ has help_keys => (
 );
 
 has default_options => (
+	init_arg => "options",
 	isa => "ArrayRef[HashRef]",
 	is  => "rw",
 	auto_deref => 1,
@@ -330,7 +332,7 @@ sub filter_options {
 		if ( keys %idx ) {
 			# FIXME this error sucks
 			require Data::Dumper;
-			croak "duplicate value for '$field': " . Dumper(\%idx);
+			croak "duplicate value for '$field': " . Data::Dumper::Dumper(\%idx);
 		}
 	}
 
@@ -362,7 +364,7 @@ sub get_default_option {
 sub format_options {
 	my ( $self, %args ) = @_;
 
-	my $default_option = $self->get_default_option(%args);
+	my $default_option = $self->get_default_option(%args) || {};
 
 	my @options = grep { not $_->{special_option} } $self->_get_arg_or_default(options => %args);
 
@@ -694,15 +696,11 @@ These attributes control default values for options.
 
 =item prompt
 
-=item default_prompt
-
-The attribute name is prefixed with C<default> for clarity.
-
-=item default_options
+The prompt to display.
 
 =item options
 
-The attribute name is prefixed with C<default> for clarity.
+The options to prompt for.
 
 =item additional_options
 
@@ -787,12 +785,6 @@ Defuaults to true.
 When invalid input is entered, reprompt until a valid choice is made.
 
 =back
-
-=head1 VERSION CONTROL
-
-This module is maintained using Darcs. You can get the latest version from
-L<http://nothingmuch.woobling.org/code>, and use C<darcs send> to commit
-changes.
 
 =head1 AUTHOR
 

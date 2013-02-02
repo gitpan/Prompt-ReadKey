@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 
-use Test::More 'no_plan';
+use Test::More;
 
 use ok 'Prompt::ReadKey';
 
@@ -33,8 +33,8 @@ my @options = (
 );
 
 my $t = MockPrompter->new(
-	default_prompt => "foo",
-	default_options => \@options,
+	prompt => "foo",
+	options => \@options,
 );
 
 $print_ret = 1;
@@ -149,4 +149,5 @@ $print_ret = 1;
 	is( @print_called, 1, "printed once" );
 }
 
+done_testing;
 
